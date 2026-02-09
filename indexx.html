@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Air Quality Index (AQI) Monitor</title>
+    <!-- Load Tailwind CSS for utility classes -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    // Custom colors based on standard AQI categories
+                    colors: {
+                        'aqi-good': '#00e400',
+                        'aqi-moderate': '#ffff00',
+                        'aqi-unhealthy-sensitive': '#ff7e00',
+                        'aqi-unhealthy': '#ff0000',
+                        'aqi-very-unhealthy': '#8f3f97',
+                        'aqi-hazardous': '#7e0023',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Merged CSS from style.css -->
+    <style>
+        /* Import Google Font (Inter) */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+
+        /* Apply Inter font and standard smoothing */
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* General Card Styling */
+        .card {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+            border-radius: 0.75rem;
+            background-color: white;
+        }
+
+        /* --- Pollutant Bar Styling --- */
+        .pollutant-bar-container {
+            height: 8px;
+            background-color: #e5e7eb; /* Gray-200 */
+            border-radius: 9999px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .pollutant-bar-fill {
+            height: 100%;
+            transition: width 0.5s ease-out;
+            border-radius: 9999px;
+        }
+
+        /* --- Historical Chart Container (for responsiveness) --- */
+        #historical-chart-container {
+            aspect-ratio: 16 / 9; /* Maintains aspect ratio on resize */
+            width: 100%;
+            max-width: 100%;
+        }
+
+        canvas {
+            background-color: white;
+            border-radius: 0.5rem;
+        }
+
+        /* --- Simple Loading Spinner --- */
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid white;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+
+<body class="bg-gray-100 min-h-screen font-sans">
+
+    <!-- Header Section -->
+    <header class="bg-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-gray-800">AirSense <span class="text-indigo-600">AQI</span></h1>
+            <button id="auth-toggle-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg transition duration-150 shadow-md">
+                Login / Signup
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 pb-12">
+
+        <!-- Authentication Modal/Section -->
+        <section id="auth-section" class="mb-8 hidden">
+            <div class="card p-6 md:p-8 max-w-lg mx-auto">
+                <h2 id="auth-title" class="text-3xl font-extrabold text-gray-900 mb-6 text-center">Login</h2>
+                
+                <form id="auth-form" class="space-y-6">
+                    <div>
+                        <label for="auth-email" class="block text-sm font-medium text-gray-700">Email Address</label>
+                        <input type="email" id="auth-email" required class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm" placeholder="you@example.com">
+                        <p id="email-error" class="text-red-500 text-xs mt-1 hidden">Invalid email format.</p>
+                    </div>
+
+                    <div>
+                        <label for="auth-password" class="block text-sm font-medium text-gray-700">Password</label>
+                        <input type="password" id="auth-password" required minlength="8" class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 shadow-sm" placeholder="Minimum 8 characters">
+                        <p id="password-error" class="text-red-500 text-xs mt-1 hidden">Password must be at least 8 characters.</p>
+                    </div>
+                    
+                    <button type="submit" id="auth-submit-btn" class="w-full py-2 px-4 border border-transparent rounded-lg shadow-sm text-lg font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150">
+                        Login
+                    </button>
+                </form>
+
+                <div class="mt-6 text-center">
+                    <button id="mode-switch-btn" class="text-sm text-indigo-600 hover:text-indigo-500 font-medium">
+                        Need an account? Switch to Signup
+                    </button>
+                    <div id="auth-message" class="mt-4 p-3 rounded-lg text-sm hidden" role="alert"></div>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- AQI Dashboard Content (Initially Hidden) -->
+        <section id="dashboard" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+            <!-- Col 1: Current AQI and Health Recommendations -->
+            <div class="lg:col-span-1 space-y-6">
+
+                <!-- Current AQI Display Card -->
+                <div id="aqi-card" class="card p-6 text-center transition-colors duration-500 bg-gray-500">
+                    <p class="text-sm font-medium uppercase text-white mb-2">Current Location AQI</p>
+                    <div class="flex items-center justify-center space-x-2 text-white">
+                        <h2 class="text-6xl font-extrabold" id="aqi-value">---</h2>
+                        <div id="aqi-spinner" class="spinner hidden"></div>
+                    </div>
+                    <p class="text-2xl font-semibold text-white mb-4" id="aqi-category">Loading Data...</p>
+                    <p class="text-sm text-white" id="aqi-location">---</p>
+                </div>
+
+                <!-- Health Recommendations Card -->
+                <div class="card p-6">
+                    <h3 class="text-xl font-bold text-gray-800 mb-4 flex items-center">
+                        <svg class="w-6 h-6 mr-2 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                        Health Advice
+                    </h3>
+                    <ul id="health-tips" class="space-y-3 text-gray-700">
+                        <li class="flex items-start">
+                            <span class="text-2xl mr-2" role="img" aria-label="loading">⏳</span>
+                            <p>Awaiting current AQI data...</p>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Col 2: Historical Trends & Pollutant Breakdown -->
+            <div class="lg:col-span-2 space-y-6">
+
+                <!-- Historical Data & Trends Card -->
+                <div class="card p-6">
+                    <h3 class="text-xl font-bold text-gray-800 mb-4">AQI Trend (Last 7 Days)</h3>
+                    <div id="historical-chart-container">
+                        <canvas id="historical-chart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Pollutant Breakdown Card -->
+                <div class="card p-6">
+                    <h3 class="text-xl font-bold text-gray-800 mb-4">Main Pollutant Breakdown (µg/m³)</h3>
+                    <div id="pollutant-breakdown" class="space-y-4">
+                        <p class="text-gray-500">Pollutant data will load here...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Full Width: Educational Information -->
+            <div class="lg:col-span-3">
+                <div class="card p-6">
+                    <h3 class="text-2xl font-bold text-gray-800 mb-4">Understanding the Air Quality Index (AQI)</h3>
+                    <div class="space-y-4 text-gray-700">
+                        <p>The Air Quality Index (AQI) is a tool used by government agencies to communicate to the public how polluted the air currently is or how polluted it is forecasted to become. It focuses on the health effects you may experience within a few hours or days after breathing polluted air.</p>
+                        <p class="font-semibold">How it is Calculated:</p>
+                        <p>The AQI is based on five major air pollutants regulated by the Clean Air Act: ground-level ozone, particle pollution (PM2.5 and PM10), carbon monoxide, sulfur dioxide, and nitrogen dioxide. For a given location, the AQI is calculated based on the highest value among the index for each pollutant. The higher the AQI value, the greater the level of air pollution and the greater the health concern.</p>
+                        
+                        <!-- AQI Category Table -->
+                        <h4 class="text-xl font-semibold mt-6 mb-2">AQI Categories & Health Impact</h4>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200 rounded-lg overflow-hidden">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">AQI</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                                        <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Color</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200 text-sm">
+                                    <tr><td class="px-3 py-2">0 - 50</td><td class="px-3 py-2">Good</td><td class="px-3 py-2 bg-aqi-good text-white font-medium"></td></tr>
+                                    <tr><td class="px-3 py-2">51 - 100</td><td class="px-3 py-2">Moderate</td><td class="px-3 py-2 bg-aqi-moderate text-gray-900 font-medium"></td></tr>
+                                    <tr><td class="px-3 py-2">101 - 150</td><td class="px-3 py-2">Unhealthy for Sensitive Groups</td><td class="px-3 py-2 bg-aqi-unhealthy-sensitive text-white font-medium"></td></tr>
+                                    <tr><td class="px-3 py-2">151 - 200</td><td class="px-3 py-2">Unhealthy</td><td class="px-3 py-2 bg-aqi-unhealthy text-white font-medium"></td></tr>
+                                    <tr><td class="px-3 py-2">201 - 300</td><td class="px-3 py-2">Very Unhealthy</td><td class="px-3 py-2 bg-aqi-very-unhealthy text-white font-medium"></td></tr>
+                                    <tr><td class="px-3 py-2">301+</td><td class="px-3 py-2">Hazardous</td><td class="px-3 py-2 bg-aqi-hazardous text-white font-medium"></td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 text-white mt-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 text-center text-sm">
+            &copy; 2024 AirSense AQI Monitor. Data simulated for demonstration purposes.
+        </div>
+    </footer>
+
+    <!-- Merged JavaScript Logic from script.js -->
+    <script>
+        // --- Configuration ---
+        // !!! IMPORTANT: Update this URL to your deployed FastAPI server's /getData endpoint !!!
+        const API_URL = 'http://localhost:8000/getData'; 
+
+        // --- Simulated/Fallback Data Source ---
+        const FALLBACK_POLLUTANTS = {
+            PM2_5: { value: 65, limit: 100, unit: 'µg/m³', color: '#3b82f6' },
+            PM10: { value: 72, limit: 150, unit: 'µg/m³', color: '#10b981' },
+            O3: { value: 35, limit: 70, unit: 'ppb', color: '#f59e0b' },
+            NO2: { value: 12, limit: 100, unit: 'ppb', color: '#ef4444' },
+            SO2: { value: 5, limit: 50, unit: 'ppb', color: '#8b5cf6' },
+            CO: { value: 1.5, limit: 10, unit: 'ppm', color: '#f43f5e' }
+        };
+        const MOCK_HISTORICAL_AQI = [
+            { day: 'Mon', aqi: 85 },
+            { day: 'Tue', aqi: 112 },
+            { day: 'Wed', aqi: 98 },
+            { day: 'Thu', aqi: 155 },
+            { day: 'Fri', aqi: 135 },
+            { day: 'Sat', aqi: 120 },
+            { day: 'Sun', aqi: 140 }
+        ];
+
+
+        // --- Helper Functions ---
+
+        /**
+         * Returns the AQI category, Tailwind color class, and Hex code based on the AQI value.
+         * @param {number} aqi 
+         * @returns {{category: string, color: string, hex: string}}
+         */
+        function getAQIColor(aqi) {
+            if (aqi <= 50) return { category: 'Good', color: 'bg-aqi-good', hex: '#00e400' };
+            if (aqi <= 100) return { category: 'Moderate', color: 'bg-aqi-moderate', hex: '#ffff00' };
+            if (aqi <= 150) return { category: 'Unhealthy for Sensitive Groups', color: 'bg-aqi-unhealthy-sensitive', hex: '#ff7e00' };
+            if (aqi <= 200) return { category: 'Unhealthy', color: 'bg-aqi-unhealthy', hex: '#ff0000' };
+            if (aqi <= 300) return { category: 'Very Unhealthy', color: 'bg-aqi-very-unhealthy', hex: '#8f3f97' };
+            return { category: 'Hazardous', color: 'bg-aqi-hazardous', hex: '#7e0023' };
+        }
+
+
+        // --- DOM Element Selection ---
+        const authSection = document.getElementById('auth-section');
+        const dashboard = document.getElementById('dashboard');
+        const authToggleBtn = document.getElementById('auth-toggle-btn');
+        const modeSwitchBtn = document.getElementById('mode-switch-btn');
+        const authForm = document.getElementById('auth-form');
+        const authTitle = document.getElementById('auth-title');
+        const authSubmitBtn = document.getElementById('auth-submit-btn');
+        const authMessage = document.getElementById('auth-message');
+        const aqiCard = document.getElementById('aqi-card');
+        const aqiValueEl = document.getElementById('aqi-value');
+        const aqiCategoryEl = document.getElementById('aqi-category');
+        const aqiLocationEl = document.getElementById('aqi-location');
+        const aqiSpinnerEl = document.getElementById('aqi-spinner');
+        const healthTipsList = document.getElementById('health-tips');
+        const pollutantBreakdown = document.getElementById('pollutant-breakdown');
+
+        // State for Auth
+        let isLoginMode = true;
+        let isAuthenticated = false;
+
+        // --- Core Functionality: API Data Fetching with Backoff ---
+        async function fetchAQIData(retries = 3, delay = 1000) {
+            aqiSpinnerEl.classList.remove('hidden');
+
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(API_URL);
+                    
+                    if (!response.ok) {
+                        throw new Error(`API returned status ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // --- MOCK/MAPPING TRANSFORMATION (Since backend only sends T/H/P) ---
+                    const temp = data.data.temperature || 25; 
+                    const humidity = data.data.humidity || 50;
+                    
+                    // Pseudo-AQI calculation for demonstration:
+                    const tempPenalty = Math.max(0, Math.abs(temp - 25) * 2); 
+                    const humidityPenalty = Math.max(0, Math.abs(humidity - 50) * 1.5);
+                    const pseudoAqi = Math.round(90 + tempPenalty + humidityPenalty + (data.id % 20)); 
+                    
+                    const latestData = {
+                        aqi: pseudoAqi, 
+                        location: `Sensor ID: ${data.id} @ ${new Date(data.timestamp).toLocaleString()}`,
+                        pollutants: FALLBACK_POLLUTANTS 
+                    };
+                    
+                    return latestData;
+
+                } catch (error) {
+                    console.error(`Attempt ${i + 1} failed:`, error.message);
+                    if (i === retries - 1) {
+                        throw new Error("Failed to fetch AQI data after multiple retries. Using fallback data.");
+                    }
+                    // Wait with exponential backoff
+                    await new Promise(resolve => setTimeout(resolve, delay * (2 ** i)));
+                }
+            }
+            throw new Error("Maximum retries reached for API call.");
+        }
+
+        // --- Functionality: Authentication UI Management ---
+
+        function toggleAuthMode() {
+            isLoginMode = !isLoginMode;
+            authTitle.textContent = isLoginMode ? 'Login' : 'Signup';
+            authSubmitBtn.textContent = isLoginMode ? 'Login' : 'Signup';
+            modeSwitchBtn.textContent = isLoginMode ? 'Need an account? Switch to Signup' : 'Already have an account? Switch to Login';
+            authMessage.classList.add('hidden');
+        }
+
+        function handleAuth(event) {
+            event.preventDefault();
+            authMessage.classList.add('hidden');
+            
+            const emailInput = document.getElementById('auth-email');
+            const passwordInput = document.getElementById('auth-password');
+            const emailError = document.getElementById('email-error');
+            const passwordError = document.getElementById('password-error');
+            
+            let isValid = true;
+            emailError.classList.add('hidden');
+            passwordError.classList.add('hidden');
+            
+            // Basic client-side validation
+            if (!/\S+@\S+\.\S+/.test(emailInput.value)) {
+                emailError.textContent = 'Please enter a valid email address.';
+                emailError.classList.remove('hidden');
+                isValid = false;
+            }
+
+            if (passwordInput.value.length < 8) {
+                passwordError.textContent = 'Password must be at least 8 characters.';
+                passwordError.classList.remove('hidden');
+                isValid = false;
+            }
+
+            if (!isValid) return;
+
+            // Simulate API Call/Success (Replace this with actual Firebase/backend auth logic)
+            authSubmitBtn.innerHTML = '<div class="spinner border-t-white mx-auto"></div>';
+            authSubmitBtn.disabled = true;
+
+            setTimeout(() => {
+                isAuthenticated = true;
+                
+                authMessage.className = 'mt-4 p-3 rounded-lg text-sm bg-green-100 text-green-700';
+                authMessage.textContent = `${isLoginMode ? 'Login' : 'Signup'} successful! Welcome to the dashboard.`;
+                authMessage.classList.remove('hidden');
+                
+                authSubmitBtn.innerHTML = isLoginMode ? 'Login' : 'Signup';
+                authSubmitBtn.disabled = false;
+
+                // Transition to dashboard
+                setTimeout(() => {
+                    authSection.classList.add('hidden');
+                    dashboard.classList.remove('hidden');
+                    authToggleBtn.textContent = 'Logout';
+                    loadDashboardData(); 
+                }, 1500);
+
+            }, 500);
+        }
+
+        function handleLogout() {
+            isAuthenticated = false;
+            authSection.classList.remove('hidden');
+            dashboard.classList.add('hidden');
+            authToggleBtn.textContent = 'Login / Signup';
+            isLoginMode = true;
+            toggleAuthMode();
+            authMessage.classList.add('hidden');
+            
+            // Clear form inputs
+            document.getElementById('auth-email').value = '';
+            document.getElementById('auth-password').value = '';
+            
+            // Reset dashboard elements
+            aqiCard.className = 'card p-6 text-center transition-colors duration-500 bg-gray-500';
+            aqiValueEl.textContent = '---';
+            aqiCategoryEl.textContent = 'Loading Data...';
+            aqiLocationEl.textContent = '---';
+            healthTipsList.innerHTML = `<li class="flex items-start"><span class="text-2xl mr-2" role="img" aria-label="loading">⏳</span><p>Awaiting current AQI data...</p></li>`;
+        }
+
+        // --- Functionality: AQI Display & Styling ---
+
+        function updateAQIDisplay(aqi, category, colorClass, location) {
+            // Update card appearance (colorClass is passed without 'bg-')
+            aqiCard.className = `card p-6 text-center transition-colors duration-500 ${colorClass}`;
+            
+            // Update values
+            aqiValueEl.textContent = aqi;
+            aqiCategoryEl.textContent = category;
+            aqiLocationEl.textContent = location;
+            aqiSpinnerEl.classList.add('hidden');
+            
+            // Update Health Tips
+            updateHealthTips(category);
+        }
+
+        function updateHealthTips(category) {
+            healthTipsList.innerHTML = ''; // Clear previous tips
+            let tips = [];
+            let icon = '✅'; 
+
+            switch (category) {
+                case 'Good':
+                    icon = '🌳';
+                    tips = [
+                        'Air quality is satisfactory, and air pollution poses little or no risk.',
+                        'It is safe to enjoy outdoor activities.'
+                    ];
+                    break;
+                case 'Moderate':
+                    icon = '⚠️';
+                    tips = [
+                        'Unusually sensitive people should consider limiting prolonged outdoor exertion.',
+                        'The general public is not likely to be affected.'
+                    ];
+                    break;
+                case 'Unhealthy for Sensitive Groups':
+                    icon = '😷';
+                    tips = [
+                        'Active children and adults, and people with respiratory disease, should limit prolonged outdoor exertion.',
+                        'Take breaks and listen to your body.'
+                    ];
+                    break;
+                case 'Unhealthy':
+                    icon = '🛑';
+                    tips = [
+                        'Active children and adults should avoid prolonged outdoor exertion.',
+                        'Everyone else should limit outdoor exertion.',
+                        'Consider wearing an N95 mask outdoors.'
+                    ];
+                    break;
+                case 'Very Unhealthy':
+                case 'Hazardous':
+                    icon = '🚨';
+                    tips = [
+                        'Everyone should avoid all outdoor exertion.',
+                        'Keep windows and doors closed.',
+                        'Run an air purifier if available.'
+                    ];
+                    break;
+                default:
+                    tips = ['No specific recommendations available.'];
+            }
+
+            tips.forEach(tip => {
+                const li = document.createElement('li');
+                li.className = 'flex items-start';
+                li.innerHTML = `<span class="text-xl mr-2">${icon}</span><p>${tip}</p>`;
+                healthTipsList.appendChild(li);
+            });
+        }
+
+        // --- Functionality: Pollutant Breakdown (Bar Chart Rendering) ---
+
+        function renderPollutantBreakdown(pollutants) {
+            pollutantBreakdown.innerHTML = '';
+            
+            // Determine a reasonable maximum value for bar width scaling (max limit)
+            const maxVal = Math.max(...Object.values(pollutants).map(p => p.limit), 100);
+
+            for (const key in pollutants) {
+                const p = pollutants[key];
+                const percentageOfLimit = Math.min((p.value / p.limit) * 100, 100); 
+                const barWidth = (p.value / maxVal) * 100; // Scale bar width relative to the largest limit
+
+                const container = document.createElement('div');
+                container.className = 'space-y-1';
+                container.innerHTML = `
+                    <div class="flex justify-between items-center text-sm font-medium">
+                        <span class="text-gray-900">${key.replace('_', '.')} (${p.unit})</span>
+                        <span class="font-semibold" style="color: ${p.color};">${p.value}</span>
+                    </div>
+                    <div class="pollutant-bar-container">
+                        <div class="pollutant-bar-fill" style="width: ${barWidth}%; background-color: ${p.color};"></div>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Health Limit: ${p.limit} ${p.unit} (${percentageOfLimit.toFixed(0)}% of limit)</p>
+                `;
+                pollutantBreakdown.appendChild(container);
+            }
+        }
+
+        // --- Functionality: Historical Line Chart (Canvas Drawing) ---
+        function renderHistoricalChart(data) {
+            const canvas = document.getElementById('historical-chart');
+            if (!canvas) return;
+
+            const container = document.getElementById('historical-chart-container');
+            // Dynamically set canvas size to fill container
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const padding = 30;
+            const chartWidth = canvas.width - 2 * padding;
+            const chartHeight = canvas.height - 2 * padding;
+
+            const values = data.map(d => d.aqi);
+            const maxAqi = Math.max(...values, 200);
+            const minAqi = 0; 
+            const aqiRange = maxAqi - minAqi;
+
+            const scaleFactor = aqiRange === 0 ? 1 : aqiRange;
+            const normalizedMin = minAqi;
+
+            const getX = (index) => padding + (index / (data.length - 1)) * chartWidth;
+            const getY = (value) => padding + chartHeight * (1 - (value - normalizedMin) / scaleFactor);
+
+            // Draw Y-Axis (Grid lines)
+            ctx.strokeStyle = '#e5e7eb';
+            ctx.fillStyle = '#6b7280';
+            ctx.font = '10px Inter';
+
+            const yLabels = [0, 50, 100, 150, 200]; 
+            yLabels.forEach(label => {
+                if (label > maxAqi) return;
+                const y = getY(label);
+                
+                // Draw horizontal grid line
+                ctx.beginPath();
+                ctx.moveTo(padding, y);
+                ctx.lineTo(padding + chartWidth, y);
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // Draw label
+                ctx.fillText(label, padding - 20, y + 3);
+            });
+            
+            // Draw X-Axis (Labels)
+            data.forEach((d, i) => {
+                ctx.fillText(d.day, getX(i) - 10, chartHeight + padding + 15);
+            });
+            
+            // --- Draw Line and Area ---
+
+            // 1. Draw Area (Gradient Fill)
+            ctx.beginPath();
+            ctx.moveTo(getX(0), getY(values[0]));
+            
+            values.forEach((v, i) => {
+                if (i > 0) {
+                    ctx.lineTo(getX(i), getY(v));
+                }
+            });
+
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, 'rgba(99, 102, 241, 0.4)'); 
+            gradient.addColorStop(1, 'rgba(99, 102, 241, 0.05)');
+            
+            // Complete the path for the fill area
+            ctx.lineTo(getX(data.length - 1), chartHeight + padding);
+            ctx.lineTo(getX(0), chartHeight + padding);
+            ctx.closePath();
+            ctx.fillStyle = gradient;
+            ctx.fill();
+
+            // 2. Draw Line (Stroke)
+            ctx.beginPath();
+            ctx.moveTo(getX(0), getY(values[0]));
+            values.forEach((v, i) => {
+                if (i > 0) {
+                    ctx.lineTo(getX(i), getY(v));
+                }
+            });
+            ctx.strokeStyle = '#6366f1'; 
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // 3. Draw Points (Circles)
+            values.forEach((v, i) => {
+                const x = getX(i);
+                const y = getY(v);
+                
+                // Outer white circle
+                ctx.beginPath();
+                ctx.arc(x, y, 5, 0, Math.PI * 2);
+                ctx.fillStyle = 'white';
+                ctx.fill();
+                
+                // Inner colored circle based on AQI level
+                ctx.beginPath();
+                ctx.arc(x, y, 3, 0, Math.PI * 2);
+                ctx.fillStyle = getAQIColor(v).hex;
+                ctx.fill();
+            });
+        }
+
+
+        // --- Main Loader Function ---
+
+        async function loadDashboardData() {
+            aqiValueEl.textContent = '...';
+            aqiCategoryEl.textContent = 'Loading Data...';
+            aqiLocationEl.textContent = 'Connecting to API...';
+
+            try {
+                const apiData = await fetchAQIData();
+                const { aqi, location, pollutants } = apiData;
+
+                const { category, color } = getAQIColor(aqi);
+
+                updateAQIDisplay(aqi, category, color.replace('bg-', ''), location);
+                renderPollutantBreakdown(pollutants);
+
+            } catch (error) {
+                console.error("Dashboard data load error:", error);
+                
+                // Fallback to static data on API error
+                const fallbackAqi = 135;
+                const { category, color } = getAQIColor(fallbackAqi);
+
+                updateAQIDisplay(
+                    fallbackAqi, 
+                    category, 
+                    color.replace('bg-', ''), 
+                    'Error: Using Simulated Data (Check API_URL)'
+                );
+                
+                aqiCategoryEl.textContent = 'API Error! Using Fallback Data.';
+                aqiSpinnerEl.classList.add('hidden');
+                
+                renderPollutantBreakdown(FALLBACK_POLLUTANTS);
+            }
+            
+            // Always render historical chart using mock data
+            renderHistoricalChart(MOCK_HISTORICAL_AQI);
+        }
+
+        // --- Event Listeners and Initialization ---
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initial setup: show auth section, hide dashboard
+            authSection.classList.remove('hidden');
+            dashboard.classList.add('hidden');
+            
+            // Event Listeners
+            modeSwitchBtn.addEventListener('click', toggleAuthMode);
+            authForm.addEventListener('submit', handleAuth);
+            authToggleBtn.addEventListener('click', () => {
+                if (isAuthenticated) {
+                    handleLogout();
+                } else {
+                    // Show auth section if user is logged out
+                    dashboard.classList.add('hidden');
+                    authSection.classList.remove('hidden');
+                    toggleAuthMode();
+                }
+            });
+            
+            // Re-render chart on window resize for responsiveness
+            window.addEventListener('resize', () => {
+                if (isAuthenticated) {
+                    renderHistoricalChart(MOCK_HISTORICAL_AQI);
+                }
+            });
+        });
+    </script>
+</body>
+</html>

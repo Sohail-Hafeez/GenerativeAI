@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<body>
+<p id="status">Listening...</p>
+<p id="text"></p>
+
+<script>
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const recognition = new SpeechRecognition();
+
+recognition.continuous = true;
+recognition.interimResults = false;
+recognition.lang = "en-US"; // change to ur-PK, hi-IN, etc.
+
+let assistantSpeaking = false;
+
+function speak(text) {
+  window.speechSynthesis.cancel();
+  assistantSpeaking = true;
+
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.onend = () => assistantSpeaking = false;
+
+  window.speechSynthesis.speak(utter);
+}
+
+recognition.onresult = (event) => {
+  if (assistantSpeaking) return; // 🔑 KEY FIX (prevents loop)
+
+  const transcript = event.results[event.results.length - 1][0].transcript.trim();
+  document.getElementById("text").innerText = transcript;
+
+  speak("I heard: " + transcript);
+};
+
+recognition.onerror = () => {
+  recognition.start(); // auto-restart
+};
+
+// 🔥 ALWAYS LISTENING
+recognition.start();
+</script>
+</body>
+</html>

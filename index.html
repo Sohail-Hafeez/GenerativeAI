@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCS Campus Navigator</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>MCS Campus Navigator</h1>
+    </header>
+
+    <div class="controls">
+        <label for="from">From:</label>
+        <select id="from"></select>
+
+        <label for="to">To:</label>
+        <select id="to"></select>
+
+        <button id="findRoute">Find Route</button>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="script.js"></script>
+    <!-- Google Maps JS API -->
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCeZu24qMrH7VwVkj3aHmiioGRwO4cgAHw&callback=initMap">
+    </script>
+</body>
+</html>
